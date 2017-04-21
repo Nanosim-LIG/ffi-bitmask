@@ -133,8 +133,8 @@ module FFI
           v = @kv_map[o]
           if v then val |= v else val end
         end
-      when Integer, -> (o) { o.respond_to?(:to_int) }
-        val = flat_query.inject(0) { |val, o| val |= o.to_int }
+      when Integer, ->(o) { o.respond_to?(:to_int) }
+        val = flat_query.inject(0) { |mask, o| mask |= o.to_int }
         @kv_map.select { |_, v| v & val != 0 }.keys
       end
     end
@@ -157,7 +157,9 @@ module FFI
           v = @kv_map[o]
           raise ArgumentError, "invalid bitmask value, #{o.inspect}" unless v
           val |= v
-        when Integer, -> (o) { o.respond_to?(:to_int) }
+        when Integer
+          val |= o
+        when ->(obj) { obj.respond_to?(:to_int) }
           val |= o.to_int
         else
           raise ArgumentError, "invalid bitmask value, #{o.inspect}"
@@ -167,11 +169,19 @@ module FFI
 
     # @param [Integer] val
     # @param ctx unused
-    # @return [Array<Symbol>] list of symbol names corresponding to val
+    # @return [Array<Symbol, Integer>] list of symbol names corresponding to val, plus an optional remainder if some bits don't match any constant
     def from_native(val, ctx)
-      @kv_map.select { |_, v| v & val != 0 }.keys
+      list = @kv_map.select { |_, v| v & val != 0 }.keys
+      # If there are unmatch flags,
+      # return them in an integer,
+      # else information can be lost.
+      # Similar to Enum behavior.
+      remainder = val ^ list.inject(0) do |tmp, o|
+        v = @kv_map[o]
+        if v then tmp |= v else tmp end
+      end
+      list.push remainder unless remainder == 0
+      return list
     end
-
   end
-
 end
